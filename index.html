@@ -3,134 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>General Storage Utility</title>
+    <title>Storage Utility Bridge</title>
+    <!-- Use Tailwind CSS for a quick, clean look -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Keep the page completely invisible to the end-user */
+        /* This ensures the page is minimal and centered, ideal for a utility page */
         body {
-            background-color: transparent;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            height: 100vh;
-            width: 100vw;
-            /* Optional: Display a small message for debugging */
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light background */
             display: flex;
             justify-content: center;
             align-items: center;
-            font-family: sans-serif;
-            font-size: 10px;
-            color: #6b7280; /* Gray-500 */
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 3rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 90%;
+            width: 400px;
+        }
+        h1 {
+            font-weight: 700;
+            color: #1e3a8a; /* Dark blue text */
         }
     </style>
 </head>
 <body>
-    <p>Storage Utility Running on storage.mahdiyasser.site</p>
-    
+
+    <div class="container">
+        <h1 class="text-2xl mb-4">Storage Utility Running</h1>
+        <p class="text-lg text-gray-600 mb-6">This page acts as a storage bridge for Mahdi Yasser's applications.</p>
+        <p class="text-sm text-gray-500">
+            <span id="domainStatus" class="font-mono text-green-700 bg-green-100 p-1 rounded-md">storage.mahdiyasser.site</span>
+        </p>
+        <p class="text-sm text-gray-400 mt-4">
+            It uses the browser's `postMessage` API to securely handle all `localStorage` operations.
+        </p>
+    </div>
+
     <script>
-        /**
-         * Checks if the incoming message is from a valid origin within the mahdiyasser.site family.
-         * Allows 'mahdiyasser.site' itself, or any subdomain ending in '.mahdiyasser.site'.
-         * @param {string} origin - The origin URL of the message sender.
-         * @returns {boolean} - True if the origin is authorized.
-         */
-        function isAuthorizedOrigin(origin) {
-            // Use URL object for reliable domain parsing
-            try {
-                const url = new URL(origin);
-                const hostname = url.hostname;
-                
-                // Allow the root domain and all subdomains of mahdiyasser.site
-                return hostname === 'mahdiyasser.site' || hostname.endsWith('.mahdiyasser.site');
-            } catch (e) {
-                console.error("Invalid origin format:", origin);
-                return false;
-            }
-        }
+        // Set the domain status dynamically (though the filename is fixed)
+        document.getElementById('domainStatus').textContent = window.location.hostname;
+
+        // --- Cross-Origin Communication Listener ---
 
         /**
-         * The core event listener for handling commands from parent windows.
+         * Listens for messages from other windows (e.g., the parent window on keeper.mahdiyasser.site).
+         * It executes the requested localStorage operation and sends a response back.
+         * * The expected message format is a JSON string:
+         * { action: 'set'|'get'|'remove', key: string, value: string (for set) }
          */
         window.addEventListener('message', (event) => {
-            // 1. SECURITY CHECK: Validate the origin of the message using the authorization function.
-            if (!isAuthorizedOrigin(event.origin)) {
-                console.error("Storage Utility: Rejected message from unauthorized origin:", event.origin);
-                return;
+            // CRITICAL SECURITY CHECK: Only accept messages from your known subdomains.
+            // Replace 'mahdiyasser.site' with the base domain you trust.
+            if (!event.origin.endsWith('.mahdiyasser.site') && event.origin !== 'https://mahdiyasser.site') {
+                return; // Ignore messages from untrusted origins
             }
-
-            const data = event.data;
-
-            if (!event.source || !data || !data.command) {
-                console.warn("Storage Utility: Received invalid data or missing command.", data);
-                return;
-            }
-
-            let response = {
-                command: data.command,
-                success: false,
-                data: null,
-                id: data.id // Pass the original command ID back for the caller to track
-            };
 
             try {
-                switch (data.command) {
-                    case 'SAVE':
-                        // Payload: { key: 'uniqueKey', value: 'dataToStore' }
-                        if (data.payload && data.payload.key && data.payload.value) {
-                            localStorage.setItem(data.payload.key, data.payload.value);
+                const message = JSON.parse(event.data);
+                let response = { action: message.action, key: message.key, success: false, data: null };
+
+                switch (message.action) {
+                    case 'set':
+                        if (message.key && message.value !== undefined) {
+                            localStorage.setItem(message.key, message.value);
                             response.success = true;
-                            response.message = `Key '${data.payload.key}' saved.`;
-                        } else {
-                            response.message = 'Invalid payload for SAVE command (requires key and value).';
                         }
                         break;
-
-                    case 'RETRIEVE':
-                        // Payload: { key: 'uniqueKey' }
-                        if (data.payload && data.payload.key) {
-                            const value = localStorage.getItem(data.payload.key);
+                    case 'get':
+                        if (message.key) {
+                            response.data = localStorage.getItem(message.key);
                             response.success = true;
-                            response.data = value; // data will be null if key is not found
-                            response.message = value !== null ? `Key '${data.payload.key}' retrieved.` : 'Key not found.';
-                        } else {
-                            response.message = 'Missing key for RETRIEVE command.';
                         }
                         break;
-
-                    case 'DELETE':
-                        // Payload: { key: 'uniqueKey' }
-                        if (data.payload && data.payload.key) {
-                            localStorage.removeItem(data.payload.key);
+                    case 'remove':
+                        if (message.key) {
+                            localStorage.removeItem(message.key);
                             response.success = true;
-                            response.message = `Key '${data.payload.key}' deleted.`;
-                        } else {
-                            response.message = 'Missing key for DELETE command.';
                         }
                         break;
-
                     default:
-                        response.message = 'Unknown command received.';
+                        // Handle unknown action
                         break;
                 }
-            } catch (e) {
-                console.error("Storage Utility Error:", e);
-                response.success = false;
-                response.message = 'An internal storage error occurred.';
-            }
 
-            // 2. SEND RESPONSE: Post the result back to the sender
-            // We use event.source.postMessage to reply directly to the sender.
-            event.source.postMessage(response, event.origin);
+                // Send the result back to the sender
+                event.source.postMessage(JSON.stringify(response), event.origin);
+
+            } catch (error) {
+                // If parsing failed or another error occurred, send an error response
+                if (event.source) {
+                    const errorResponse = { action: 'error', message: 'Bridge failed: ' + error.message };
+                    event.source.postMessage(JSON.stringify(errorResponse), event.origin);
+                }
+            }
         });
 
-        // Inform the parent window (if any) that the iframe is ready
-        window.onload = function() {
-            if (window.parent !== window) {
-                // Since we don't know the exact parent origin, we send * to announce readiness.
-                // However, the listener on the parent side must still check the origin.
-                // We'll trust the parent to check the origin of this "READY" message.
-                window.parent.postMessage({ command: 'READY', origin: window.location.origin }, '*');
-            }
-        };
+        // Inform the console the bridge is ready
+        console.log('Storage Utility Bridge is active and listening for postMessage commands.');
 
     </script>
 </body>
